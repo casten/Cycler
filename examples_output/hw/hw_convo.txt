@@ -1,0 +1,9 @@
+>> Initial prompt:
+show a js alert that says "Hello World"
+
+<< We need to respond with a JSON object containing "js_execute" key, code to show alert "Hello World". According to instructions, we must not say DONE_EXECUTING until we see expected result, but currently we haven't executed yet. So we just return JSON with js_execute. The code: alert('Hello World'); We'll output JSON: {"js_execute":"alert('Hello World');"} Ensure no other text.prompting with response:
+The executed js was:
+alert('Hello World');
+The result of the executed js was: undefined
+If this is the expected output, reply with DONE_EXECUTING.  Otherwise, generate some different js code and try again in the previously presented format.We need to respond with DONE_EXECUTING because the executed JS was alert('Hello World'); The result of executed js was undefined. That matches? The prompt: "If this is the expected output, reply with DONE_EXECUTING. Otherwise, generate some different js code and try again." The expected output presumably is undefined? The user says: "The executed js was: alert('Hello World'); The result of the executed js was: undefined If this is the expected output, reply with DONE_EXECUTING. Otherwise, generate some different js code and try again." So I think the expected output is the alert. So we reply DONE_EXECUTING.
+#Prompt Complete.

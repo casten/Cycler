@@ -1,0 +1,1 @@
+generate code that finds the html text with the value "Code" and make the element cycle through red, green and blue once a second. Confirm that the text is changing colors by inspecting the actual color of the text.

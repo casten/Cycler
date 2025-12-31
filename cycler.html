@@ -1,0 +1,153 @@
+<html>
+<head>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="json_util.js"></script>
+    <script type="module">
+        const api_context = "This query is being made from javascript to an AI model hosted by ollama.  If the response can be improved by executing javascript, code can "+
+        "be executed by responding with a JSON object with a member with a key named \"js_execute\" and the value being the javascript code to be executed.  "+
+        "The code will be evaluated and the result will be returned in a subsequent query with a JSON object with a key named \"js_execute_result\" "+
+        "which will have the value of the returned result.  When you have gotten the expected result from the javascript execution, include the text \"DONE_EXECUTING\".  "+
+        "Do not say DONE_EXECUTING unless you have seen the expected result from the javascript.  If the returned code is executed and returns a promise, the promise "+
+        "will be awaited on along with any subsequent resulting promises.  Be sure any errors or exceptions are caught and passed out from the evaluation so they can be "+
+        "returned by the result of the eval() call."; 
+        
+        function add_text(control_id, text, prefix="") {
+            var textCtl = $(`#${control_id}`);
+            var existing_text = textCtl.val();
+            if ((existing_text.length==0) || existing_text.endsWith("\n")){
+                existing_text += prefix;
+            }
+            textCtl.val(existing_text+text);
+            textCtl.scrollTop(textCtl[0].scrollHeight);
+        }
+
+        export async function call(prompt) {
+            var res = await fetch("http://127.0.0.1:11434/api/generate", {
+                method: "POST",
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    "model":"gpt-oss:20b",
+                    "prompt":api_context+"\n"+prompt,
+                    "stream":true
+                })
+            }
+            ).then(async response=>{
+                var response_text = "";
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let lastFragment = '';
+
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        lastFragment += decoder.decode(value, { stream: true });
+
+                        const lines = lastFragment.split('\n');
+                        lastFragment = lines.pop(); // Keep the last, potentially incomplete, line
+
+                        for (const line of lines) {
+//                            console.log(`Processing line: ${line}`);
+                            var processed = JSON.parse(line);
+                            if ("thinking" in processed) {
+                                add_text("conversation", processed["thinking"], "<< ");
+                            }
+                            if (!processed["done"]){
+                                response_text += processed["response"];
+                            }
+                        }
+                    }
+                    // Process the last fragment if it's not empty after the stream ends
+                    if (lastFragment !== '') {
+                        console.log(`Processing final fragment: ${lastFragment}`);
+                    }
+                } catch (error) {
+                    console.error('Error reading stream:', error);
+                } finally {
+                    reader.releaseLock();
+                }
+                return response_text;
+            })
+            return res;
+        }
+        window.call = call;
+
+        const isPromise = (obj) => {
+          return (
+            !!obj &&
+            (typeof obj === 'object' || typeof obj === 'function') &&
+            typeof obj.then === 'function'
+          );
+        };
+
+        function inc_cycles() {
+            $("#cycles").text(parseInt($("#cycles").text())+1);
+        }
+
+        async function run_prompt() {
+            $("body").css("background-color", "lightgreen");            
+            var prompt = $("#prompt").val();
+            $("#conversation").val("");
+            add_text("conversation", "Initial prompt:\n"+prompt+"\n\n", ">> ");
+            $("#code").val("");
+            while (true) {
+                var resp = await call(prompt);
+                if (resp.includes("DONE_EXECUTING")){
+                    $("body").css("background-color", "Khaki");            
+                    add_text("conversation", "\n#Prompt Complete.");
+                    return resp;
+                }
+                if (resp.includes("js_execute")) {
+                    try {
+                        var exec_json = extractJsonWithKey(resp,"js_execute");
+                        var js_exec = exec_json["js_execute"];
+                        $("#code").val("");
+                        add_text("code", js_exec);
+                        var eval_result = eval(js_exec);
+                        inc_cycles(); 
+                        while (isPromise(eval_result)) {
+                            eval_result = await eval_result;
+                        }
+                        prompt = "The executed js was:\n"+js_exec+"\nThe result of the executed js was: "+eval_result+
+                                 "\nIf this is the expected output, reply with DONE_EXECUTING.  Otherwise, generate some different "+
+                                 "js code and try again in the previously presented format.";
+
+                        add_text("conversation", "\nPrompting with response:\n"+prompt, ">> ");
+                    }
+                    catch(Error) {
+                        prompt = "An Error occured:\n"+Error+"\n while executing the following code:\n"+prompt;
+                    }
+                }
+            }
+        }
+        window.run_prompt = run_prompt; 
+        window.load = ()=>{
+            $("#prompt").val(localStorage.getItem("prompt"));
+        }
+        window.addEventListener("beforeunload", (event) => {
+          localStorage.setItem("prompt",$("#prompt").val());
+        });
+
+    </script>
+</head>
+<body onload="load()">
+    <button onclick="run_prompt()")>Query</button>
+    <div style="display:flex;width:95%;height:95%;margin-top:20;">
+        <div style="width:25%">
+            Prompt<br>
+            <textarea id="prompt" style="width:100%;height:95%;">show a js alert that says "hello world"</textarea>
+        </div>
+        <div style="postion:float-right;width:25%;">
+            Code<br>
+            <textarea id="code" style="width:100%;height:95%"></textarea>
+        </div>
+        <div style="postion:float-right;width:50%;">
+            Conversation &nbsp;&nbsp;&nbsp; Cycles:<span id="cycles">0</span>
+            <textarea id="conversation" style="width:100%;height:95%;"></textarea>
+        </div>
+    </div>
+</body>
+</html>

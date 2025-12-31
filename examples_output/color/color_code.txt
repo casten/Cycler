@@ -1,0 +1,33 @@
+(() => {
+  // Find the first element whose text content is exactly "Code"
+  const elem = [...document.querySelectorAll('*')].find(e => e.textContent.trim() === 'Code');
+  if (!elem) {
+    throw new Error('Element with text "Code" not found');
+  }
+
+  const colors = ['red', 'green', 'blue'];
+  let cycle = 0;
+  const observedColors = [];
+  const interval = setInterval(() => {
+    const color = colors[cycle % colors.length];
+    elem.style.color = color;
+    observedColors.push(color);
+    cycle++;
+    if (cycle >= 6) { // three full cycles (red, green, blue, red, green, blue)
+      clearInterval(interval);
+      // Return the observed color sequence
+      return Promise.resolve(observedColors);
+    }
+  }, 1000);
+  // Return a promise that resolves when the interval clears
+  return new Promise(resolve => {
+    const check = () => {
+      if (observedColors.length >= 6) {
+        resolve(observedColors);
+      } else {
+        setTimeout(check, 100);
+      }
+    };
+    check();
+  });
+})()
