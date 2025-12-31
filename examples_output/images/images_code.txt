@@ -1,0 +1,85 @@
+(async() => {
+   try {
+      const base = 'https://casten.net';
+      const proxies = ['https://corsproxy.io/?url=', 'https://api.allorigins.win/raw?url=', 'https://thingproxy.freeboard.io/fetch/', 'https://cors.isomorphic-git.org/'];
+      let pageText;
+      for (const p of proxies) {
+         try {
+            const res = await fetch(p + encodeURIComponent(base));
+            if (res.ok) {
+               pageText = await res.text();
+               break;
+            }
+         } catch (e) {
+            continue;
+         }
+      }
+      if (!pageText) {
+         return 'Error: Could not fetch page via proxies';
+      }
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(pageText, 'text/html');
+      const imgEls = Array.from(doc.querySelectorAll('img'));
+      const srcs = imgEls.map(el => el.getAttribute('src')).filter(Boolean).map(src => new URL(src, base).href);
+      const fetchWithProxy = async(url) => {
+         for (const p of proxies) {
+            try {
+               const res = await fetch(p + encodeURIComponent(url));
+               if (res.ok) return res;
+            } catch (e) {
+               continue;
+            }
+         }
+         try { // try direct fetch if all proxies fail
+            const res = await fetch(url, {
+               mode: 'cors'
+            });
+            if (res.ok) return res;
+         } catch (e) { /* ignore */ }
+         throw new Error('Failed to fetch ' + url);
+      };
+      const fetchImage = async(url) => {
+         const r = await fetchWithProxy(url);
+         const arrayBuffer = await r.arrayBuffer();
+         const type = r.headers.get('Content-Type') || 'image/png';
+         const blob = new Blob([arrayBuffer], {
+            type
+         });
+         return new Promise((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(fr.result);
+            fr.onerror = reject;
+            fr.readAsDataURL(blob);
+         });
+      };
+      const imagePromises = srcs.map(async(url) => {
+         try {
+            const dataUrl = await fetchImage(url);
+            return {
+               dataUrl,
+               url
+            };
+         } catch (e) {
+            console.warn('Failed to fetch image', url, e);
+            return null;
+         }
+      });
+      const images = await Promise.all(imagePromises);
+      images.filter(Boolean).forEach(({
+         dataUrl,
+         url
+      }) => {
+         const img = document.createElement('img');
+         img.src = dataUrl;
+         img.onload = () => {
+            img.width = img.naturalWidth;
+            img.height = img.naturalHeight;
+            document.body.appendChild(img);
+         };
+         img.onerror = () => console.warn('Failed load image', url);
+      });
+      return 'Images loaded and appended';
+   } catch (e) {
+      return 'Error: ' + e.message;
+   }
+})();
