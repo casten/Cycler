@@ -1,0 +1,57 @@
+/* Add these styles to your <style> block or an external CSS file */
+html, body {
+    height: 100%; /* Ensure html and body take full viewport height */
+    margin: 0; /* Remove default body margin */
+    padding: 0; /* Remove default body padding */
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+body {
+    display: flex;
+    flex-direction: column;
+}
+.main-content-flex-container {
+    flex-grow: 1; /* Allow this container to grow and fill available space */
+    display: flex; /* Make it a flex container for its children */
+    width: 95%; /* Keep width as before */
+    margin-top: 20px; /* Keep margin-top as before, adjust units */
+    margin-left: auto; /* Center the div if needed, assuming the parent has width 100% */
+    margin-right: auto;
+}
+.code-panel {
+    display: flex;
+    flex-direction: column;
+    width:25%;
+    margin:5px;
+}
+.code-panel textarea {
+    width: 100%; /* Ensure textareas take full width of their parent */
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+#code {
+    /* If you want a fixed height for the 'Code' textarea, use px or a smaller % */
+    height: 100px; /* Example fixed height for 'Code' */
+    flex-shrink: 0; /* Prevent it from shrinking */
+}
+#code-result {
+    flex-grow: 1; /* Make 'Code Result' fill the remaining space */
+    height: auto; /* Let flex-grow manage the height, or remove height:100% */
+}
+#conversation {
+    height: 100%;
+    flex-grow: 1; /* Make conversation fill its remaining space */
+    box-sizing: border-box;
+}
+#prompt {
+    height: 100%;
+    flex-grow: 1; /* Make prompt fill its remaining space */
+    box-sizing: border-box;
+}
+.prompt-panel, .conversation-panel {
+    display: flex;
+    flex-direction: column;
+    width: 25%; /* Adjusted from 25% for prompt and 50% for conversation */
+    margin: 5px;
+}
+.conversation-panel {
+     width: 50%;
+}

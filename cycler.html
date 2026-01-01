@@ -1,4 +1,4 @@
-<html>
+<html style="height: 100%;">
 <head>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     <script src="json_util.js"></script>
@@ -33,7 +33,8 @@
             };
             if (context == null) {
                 request["prompt"] = api_context+"\n"+prompt;
-            else {
+            } 
+            else { 
                 request["prompt"] = prompt;
                 request['context'] = context;
             }
@@ -145,24 +146,26 @@
         });
 
     </script>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body onload="load()">
-    <button onclick="run_prompt()")>Query</button>
-    <div style="display:flex;width:95%;height:95%;margin-top:20;">
-        <div style="width:25%;margin:5px;">
+    <button onclick="run_prompt()" style="align-self: flex-start;">Query</button>
+    <div class="main-content-flex-container">
+        <div class="prompt-panel">
             Prompt<br>
             <textarea id="prompt" style="width:100%;height:100%;">show a js alert that says "hello world"</textarea>
         </div>
-        <div style="width:25%;margin:5px;display:flex; flex-direction:column;">
+        <div class="code-panel">
             Code<br>
-            <textarea id="code" style="width:100%;height:200px;flex-shrink:0"></textarea>
+            <textarea id="code" style="width:100%;height:50%;"></textarea>
             Code Result<br>
-            <textarea id="code-result" style="width:100%;flex-grow:1"></textarea>
+            <textarea id="code-result" style="width:100%;"></textarea>
         </div>
-        <div style="width:50%;margin:5px;">
-            Conversation &nbsp;&nbsp;&nbsp; Cycles:<span id="cycles">0</span>
+        <div class="conversation-panel">
+            <span style="white-space: nowrap;">Conversation &nbsp;&nbsp;&nbsp; Cycles:<span id="cycles">0</span></span>
             <textarea id="conversation" style="width:100%;height:100%;"></textarea>
         </div>
+
     </div>
 </body>
 </html>
