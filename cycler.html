@@ -3,13 +3,12 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     <script src="json_util.js"></script>
     <script type="module">
-        const api_context = "This query is being made from javascript to an AI model hosted by ollama.  If the response can be improved by executing javascript, code can "+
-        "be executed by responding with a JSON object with a member with a key named \"js_execute\" and the value being the javascript code to be executed.  "+
+        const api_context = "Any code generated from subsequent requests will be executed for validation. Respond with a JSON object with a member with a key named \"js_execute\" and the value being the javascript code to be executed.  The response will be "+
         "The code will be evaluated and the result will be returned in a subsequent query with a JSON object with a key named \"js_execute_result\" "+
-        "which will have the value of the returned result.  When you have gotten the expected result from the javascript execution, include the text \"DONE_EXECUTING\".  "+
+        "which will have the value of the returned result.  When you have received the expected result from the javascript execution, include the text \"DONE_EXECUTING\".  "+
         "Do not say DONE_EXECUTING unless you have seen the expected result from the javascript.  If the returned code is executed and returns a promise, the promise "+
         "will be awaited on along with any subsequent resulting promises.  Be sure any errors or exceptions are caught and passed out from the evaluation so they can be "+
-        "returned by the result of the eval() call."; 
+        "returned by the result of the eval() call so you can inspect the results and fix any problems."; 
         
         function add_text(control_id, text, prefix="") {
             var textCtl = $(`#${control_id}`);
@@ -21,23 +20,30 @@
             textCtl.scrollTop(textCtl[0].scrollHeight);
         }
 
-        export async function call(prompt) {
-            var res = await fetch("http://127.0.0.1:11434/api/generate", {
+        export async function call(prompt, context=null) {
+            var request = {
                 method: "POST",
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
                     "model":"gpt-oss:20b",
-                    "prompt":api_context+"\n"+prompt,
                     "stream":true
                 })
+            };
+            if (context == null) {
+                request["prompt"] = api_context+"\n"+prompt;
+            else {
+                request["prompt"] = prompt;
+                request['context'] = context;
             }
+            var res = await fetch("http://127.0.0.1:11434/api/generate", request
             ).then(async response=>{
                 var response_text = "";
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let lastFragment = '';
+                var ctx = null;
 
                 try {
                     while (true) {
@@ -58,6 +64,9 @@
                             if (!processed["done"]){
                                 response_text += processed["response"];
                             }
+                            if ("context" in processed) {
+                                ctx = processed["context"];
+                            }
                         }
                     }
                     // Process the last fragment if it's not empty after the stream ends
@@ -66,10 +75,11 @@
                     }
                 } catch (error) {
                     console.error('Error reading stream:', error);
+                    response_text = error;
                 } finally {
                     reader.releaseLock();
                 }
-                return response_text;
+                return {response:response_text, context:ctx};
             })
             return res;
         }
@@ -93,8 +103,11 @@
             $("#conversation").val("");
             add_text("conversation", "Initial prompt:\n"+prompt+"\n\n", ">> ");
             $("#code").val("");
+            var ctx = null;
             while (true) {
-                var resp = await call(prompt);
+                var res = await call(prompt, ctx);
+                var resp = res['response'];
+                ctx = res['context'];
                 if (resp.includes("DONE_EXECUTING")){
                     $("body").css("background-color", "Khaki");            
                     add_text("conversation", "\n#Prompt Complete.");
@@ -136,17 +149,19 @@
 <body onload="load()">
     <button onclick="run_prompt()")>Query</button>
     <div style="display:flex;width:95%;height:95%;margin-top:20;">
-        <div style="width:25%">
+        <div style="width:25%;margin:5px;">
             Prompt<br>
-            <textarea id="prompt" style="width:100%;height:95%;">show a js alert that says "hello world"</textarea>
+            <textarea id="prompt" style="width:100%;height:100%;">show a js alert that says "hello world"</textarea>
         </div>
-        <div style="postion:float-right;width:25%;">
+        <div style="width:25%;margin:5px;display:flex; flex-direction:column;">
             Code<br>
-            <textarea id="code" style="width:100%;height:95%"></textarea>
+            <textarea id="code" style="width:100%;height:200px;flex-shrink:0"></textarea>
+            Code Result<br>
+            <textarea id="code-result" style="width:100%;flex-grow:1"></textarea>
         </div>
-        <div style="postion:float-right;width:50%;">
+        <div style="width:50%;margin:5px;">
             Conversation &nbsp;&nbsp;&nbsp; Cycles:<span id="cycles">0</span>
-            <textarea id="conversation" style="width:100%;height:95%;"></textarea>
+            <textarea id="conversation" style="width:100%;height:100%;"></textarea>
         </div>
     </div>
 </body>
