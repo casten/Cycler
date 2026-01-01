@@ -8,6 +8,7 @@ html, body {
 body {
     display: flex;
     flex-direction: column;
+    min-height: 100vh;
 }
 .main-content-flex-container {
     flex-grow: 1; /* Allow this container to grow and fill available space */
@@ -22,36 +23,54 @@ body {
     flex-direction: column;
     width:25%;
     margin:5px;
+    height: 92%;
 }
 .code-panel textarea {
-    width: 100%; /* Ensure textareas take full width of their parent */
-    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+    width: 100%;
+    box-sizing: border-box;
+}
+.conversation-panel {
+    width: 50%;
+    height: 100%;
+}
+.prompt-panel {
+    width: 25%;
+    height: 90%;
 }
 #code {
     /* If you want a fixed height for the 'Code' textarea, use px or a smaller % */
-    height: 100px; /* Example fixed height for 'Code' */
     flex-shrink: 0; /* Prevent it from shrinking */
+    height: 50%;
 }
 #code-result {
-    flex-grow: 1; /* Make 'Code Result' fill the remaining space */
-    height: auto; /* Let flex-grow manage the height, or remove height:100% */
+    flex-grow: 1;
+    height: 20%;
 }
-#conversation {
-    height: 100%;
-    flex-grow: 1; /* Make conversation fill its remaining space */
-    box-sizing: border-box;
+#code-status {
+    flex-grow: 1;
+    height: 20%;
 }
 #prompt {
     height: 100%;
     flex-grow: 1; /* Make prompt fill its remaining space */
     box-sizing: border-box;
+    width: 50%;
 }
-.prompt-panel, .conversation-panel {
-    display: flex;
-    flex-direction: column;
-    width: 25%; /* Adjusted from 25% for prompt and 50% for conversation */
-    margin: 5px;
+#conversation-quill {
+ border: 1px solid black;
+ display: flex;
+ flex-direction: column;
+ height: 90%
 }
-.conversation-panel {
-     width: 50%;
+#conversation-quill .ql-editor {
+  width: 100%;
+  flex-grow: 1;
+  flex-shrink: 1;
+  overflow-y: auto;
+}
+.ql-editor {
+    padding: 5;
+    box-sizing: border-box;
+    overflow-y: auto;
+    max-height: 100dvh; 
 }

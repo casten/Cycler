@@ -2,14 +2,20 @@
 <head>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     <script src="json_util.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
     <script type="module">
         const api_context = "Any code generated from subsequent requests will be executed for validation. Respond with a JSON object with a member with a key named \"js_execute\" and the value being the javascript code to be executed.  The response will be "+
         "The code will be evaluated and the result will be returned in a subsequent query with a JSON object with a key named \"js_execute_result\" "+
         "which will have the value of the returned result.  When you have received the expected result from the javascript execution, include the text \"DONE_EXECUTING\".  "+
         "Do not say DONE_EXECUTING unless you have seen the expected result from the javascript.  If the returned code is executed and returns a promise, the promise "+
         "will be awaited on along with any subsequent resulting promises.  Be sure any errors or exceptions are caught and passed out from the evaluation so they can be "+
-        "returned by the result of the eval() call so you can inspect the results and fix any problems."; 
+        "returned by the result of the eval() call so you can inspect the results and fix any problems.  You should use the following function during "+
+        "the execution of any code to indicate status to the user can know work is being done.  It is attached to the window object and takes a string "+
+        "as a parameter: update_code_status()"; 
         
+
+        var conversationQuill;
+
         function add_text(control_id, text, prefix="") {
             var textCtl = $(`#${control_id}`);
             var existing_text = textCtl.val();
@@ -20,12 +26,37 @@
             textCtl.scrollTop(textCtl[0].scrollHeight);
         }
 
+        function add_quill_text(control, text, direction="incoming") {
+            var pos = control.getLength();
+            var prefix;
+            var config;
+            if (direction=="incoming") {
+                prefix = ">> ";
+                config = {"background-color":"lightblue"}
+            }
+            else {
+                prefix = "<< ";
+                config = {"background-color":"lightgreen"};
+            }
+            if (pos==0 || control.getText().substring(pos-2) == "\n\n"){
+                control.deleteText(pos,1);
+                text = prefix+text;
+            }
+            if (text.at(-1) == "\n") {
+                text = text.slice(0,-1);
+            }
+            control.insertText(pos-2, text, config);
+            const lastIndex = control.getLength();
+            control.setSelection(lastIndex, 0, 'silent');
+            control.scrollSelectionIntoView();
+        }
+
         function process_line(line) {
             var ctx = null;
             var response_text = null;
             var processed = JSON.parse(line);
             if ("thinking" in processed) {
-                add_text("conversation", processed["thinking"], "<< ");
+                add_quill_text(conversationQuill, processed["thinking"])
             }
             if (!processed["done"]){
                 response_text = processed["response"];
@@ -71,10 +102,9 @@
                         lastFragment = lines.pop(); // Keep the last, potentially incomplete, line
 
                         for (const line of lines) {
-//                            console.log(`Processing line: ${line}`);
                             var processed = JSON.parse(line);
                             if ("thinking" in processed) {
-                                add_text("conversation", processed["thinking"], "<< ");
+                                add_quill_text(conversationQuill, processed["thinking"])
                             }
                             if (!processed["done"]){
                                 response_text += processed["response"];
@@ -126,20 +156,23 @@
         }
 
         async function run_prompt() {
-            $("body").css("background-color", "lightgreen");            
+            $("body").css("background-color", "lightyellow");            
             var prompt = $("#prompt").val();
-            $("#conversation").val("");
+            conversationQuill.setContents([]);
             $("#code").val("");
             $("#code-result").val("");
-            add_text("conversation", "Initial prompt:\n"+prompt+"\n\n", ">> ");
+            $("#code-status").val("");
+            $("#cycles").text('0');
+            add_quill_text(conversationQuill, "Initial prompt:\n"+prompt+"\n\n", "outgoing");
             var ctx = null;
             while (true) {
                 var res = await call(prompt, ctx);
                 var resp = res['response'];
                 ctx = res['context'];
                 if (resp.includes("DONE_EXECUTING")){
-                    $("body").css("background-color", "Khaki");            
-                    add_text("conversation", "\n#Prompt Complete.");
+                    $("body").css("background-color", "Nyanza");            
+                    // add_text("conversation", "\n#Prompt Complete.");
+                    add_quill_text(conversationQuill, "\n#Prompt Complete.", "outgoing");
                     return resp;
                 }
                 if (resp.includes("js_execute")) {
@@ -157,41 +190,60 @@
                                  "\nIf this is the expected output, reply with DONE_EXECUTING.  Otherwise, generate some different "+
                                  "js code and try again in the previously presented format.";
 
-                        add_text("conversation", "\n>> Prompting with response:\n"+prompt, ">> ");
+                        add_quill_text(conversationQuill, "\n>> Prompting with response:\n"+prompt+"\n\n", "outgoing");
                     }
                     catch(Error) {
-                        prompt = "An Error occured:\n"+Error+"\n while executing the following code:\n"+prompt;
+                        prompt = "An Error occured:\n"+ Error+"\n while executing the following code:\n"+prompt;
                     }
                 }
             }
         }
         window.run_prompt = run_prompt; 
         window.load = ()=>{
-            $("#prompt").val(localStorage.getItem("prompt"));
+            var prompt = localStorage.getItem("prompt");
+            if (!prompt){
+                return;
+            }
+            $("#prompt").val(prompt);
         }
         window.addEventListener("beforeunload", (event) => {
+          
           localStorage.setItem("prompt",$("#prompt").val());
         });
+        window.update_code_status = (status)=>{
+            $("#code-status").val($("#code-status").val()+"\n"+status);
+        }
+        var options =  {
+          modules: {
+            toolbar:false,
+          },
+          theme: 'snow',
+        };
+        conversationQuill = new Quill('#conversation-quill', options);
+        conversationQuill.format('margin', '20px');
 
     </script>
     <link rel="stylesheet" href="style.css">
+
 </head>
 <body onload="load()">
     <button onclick="run_prompt()" style="align-self: flex-start; margin: 5px;">Query</button>
     <div class="main-content-flex-container">
-        <div class="prompt-panel">
+        <div id="prompt-container" class="prompt-panel">
             Prompt<br>
-            <textarea id="prompt" style="width:100%;height:100%;">show a js alert that says "hello world"</textarea>
+            <textarea id="prompt" style="width:100%;">show a js alert that says "hello world"</textarea>
         </div>
-        <div class="code-panel">
+        <div id="code-container" class="code-panel">
             Code<br>
-            <textarea id="code" style="width:100%;height:50%;"></textarea>
+            <textarea id="code" style="width:100%"></textarea>
             Code Result<br>
-            <textarea id="code-result" style="width:100%;"></textarea>
+            <textarea id="code-result" style="width:100%"></textarea>
+            Code Log<br>
+            <textarea id="code-status" style="width:100%"></textarea>
         </div>
-        <div class="conversation-panel">
+        <div id="conversation-container" class="conversation-panel">
             <span style="white-space: nowrap;">Conversation &nbsp;&nbsp;&nbsp; Cycles:<span id="cycles">0</span></span>
-            <textarea id="conversation" style="width:100%;height:100%;"></textarea>
+            <div id="conversation-quill" style="width:100%;" class="prompt-panel" ></div>
         </div>
 
     </div>
