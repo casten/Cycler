@@ -20,7 +20,27 @@
             textCtl.scrollTop(textCtl[0].scrollHeight);
         }
 
-        export async function call(prompt, context=null) {
+        function process_line(line) {
+            var ctx = null;
+            var response_text = null;
+            var processed = JSON.parse(line);
+            if ("thinking" in processed) {
+                add_text("conversation", processed["thinking"], "<< ");
+            }
+            if (!processed["done"]){
+                response_text = processed["response"];
+            }
+            if ("context" in processed) {
+                ctx = processed["context"];
+            }
+            return {response_text: response_text, ctx:ctx};
+        }
+
+        export async function call(prompt, ctx=null) {
+            var context = null;
+            if (ctx == null) {
+                prompt = api_context+"\n"+prompt
+            }
             var request = {
                 method: "POST",
                 headers: {
@@ -28,23 +48,17 @@
                 },
                 body: JSON.stringify({
                     "model":"gpt-oss:20b",
-                    "stream":true
+                    "prompt": prompt,
+                    "stream":true,
+                    "context":ctx
                 })
             };
-            if (context == null) {
-                request["prompt"] = api_context+"\n"+prompt;
-            } 
-            else { 
-                request["prompt"] = prompt;
-                request['context'] = context;
-            }
             var res = await fetch("http://127.0.0.1:11434/api/generate", request
             ).then(async response=>{
                 var response_text = "";
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let lastFragment = '';
-                var ctx = null;
 
                 try {
                     while (true) {
@@ -76,7 +90,6 @@
                     }
                 } catch (error) {
                     console.error('Error reading stream:', error);
-                    response_text = error;
                 } finally {
                     reader.releaseLock();
                 }
@@ -98,12 +111,27 @@
             $("#cycles").text(parseInt($("#cycles").text())+1);
         }
 
+        function format_js_eval_output(output) {
+            if (typeof(output) == "string"){
+                return output;
+            }
+            if (typeof(output) == "int"){
+                return output.toString();
+            }
+            if (typeof(output) == "object"){
+                return "Result was JSON.stringify'd: "+JSON.stringify(output);
+            }
+            if (typeof(output) == "object"){
+            }
+        }
+
         async function run_prompt() {
             $("body").css("background-color", "lightgreen");            
             var prompt = $("#prompt").val();
             $("#conversation").val("");
-            add_text("conversation", "Initial prompt:\n"+prompt+"\n\n", ">> ");
             $("#code").val("");
+            $("#code-result").val("");
+            add_text("conversation", "Initial prompt:\n"+prompt+"\n\n", ">> ");
             var ctx = null;
             while (true) {
                 var res = await call(prompt, ctx);
@@ -118,9 +146,9 @@
                     try {
                         var exec_json = extractJsonWithKey(resp,"js_execute");
                         var js_exec = exec_json["js_execute"];
-                        $("#code").val("");
-                        add_text("code", js_exec);
-                        var eval_result = eval(js_exec);
+                        $("#code").val(js_exec);
+                        var eval_result = format_js_eval_output(eval(js_exec));
+                        $("#code-result").val(eval_result);
                         inc_cycles(); 
                         while (isPromise(eval_result)) {
                             eval_result = await eval_result;
@@ -129,7 +157,7 @@
                                  "\nIf this is the expected output, reply with DONE_EXECUTING.  Otherwise, generate some different "+
                                  "js code and try again in the previously presented format.";
 
-                        add_text("conversation", "\nPrompting with response:\n"+prompt, ">> ");
+                        add_text("conversation", "\n>> Prompting with response:\n"+prompt, ">> ");
                     }
                     catch(Error) {
                         prompt = "An Error occured:\n"+Error+"\n while executing the following code:\n"+prompt;
@@ -149,7 +177,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body onload="load()">
-    <button onclick="run_prompt()" style="align-self: flex-start;">Query</button>
+    <button onclick="run_prompt()" style="align-self: flex-start; margin: 5px;">Query</button>
     <div class="main-content-flex-container">
         <div class="prompt-panel">
             Prompt<br>
