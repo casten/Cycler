@@ -4,14 +4,20 @@
     <script src="json_util.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
     <script type="module">
-        const api_context = "Any code generated from subsequent requests will be executed for validation. Respond with a JSON object with a member with a key named \"js_execute\" and the value being the javascript code to be executed.  The response will be "+
-        "The code will be evaluated and the result will be returned in a subsequent query with a JSON object with a key named \"js_execute_result\" "+
-        "which will have the value of the returned result.  When you have received the expected result from the javascript execution, include the text \"DONE_EXECUTING\".  "+
-        "Do not say DONE_EXECUTING unless you have seen the expected result from the javascript.  If the returned code is executed and returns a promise, the promise "+
+        import {ollama} from './ollama.js';
+        import {claude} from './claude.js';
+
+        const api_context = ()=> {return "Respond to this request with a JSON object with a member with a key named \"js_execute\" whose value is the javascript "+
+        "code to be executed.  The the code contained in the value of \"js_execute\" will be evaluated and the response will be returned in a "+
+        "subsequent query. The string value of js_execute should not be double escaped."+
+        "After the code is executed the returned result will be sent back in another query.  If the result matches the expected output, send a new response and include the text \"DONE_EXECUTING\".  "+
+        "Do not return any value or code with the text \"DONE_EXECUTING\" unless you have seen the expected result from the javascript in a subsequent query.  If the returned code is executed and returns a promise, the promise "+
         "will be awaited on along with any subsequent resulting promises.  Be sure any errors or exceptions are caught and passed out from the evaluation so they can be "+
         "returned by the result of the eval() call so you can inspect the results and fix any problems.  You should use the following function during "+
-        "the execution of any code to indicate status to the user can know work is being done.  It is attached to the window object and takes a string "+
-        "as a parameter: update_code_status()"; 
+        "the execution of any code to indicate status to the user can know work is being done.  It is attached to the global window object and takes a "+
+        " string as a parameter: update_code_status(string).  "+
+        "For commands that want to write to UI, an existing DIV exists with the id \"dyn-ui\" that the code should add elements to."
+        };
         
 
         var conversationQuill;
@@ -31,11 +37,9 @@
             var prefix;
             var config;
             if (direction=="incoming") {
-                prefix = ">> ";
                 config = {"background-color":"lightblue"}
             }
             else {
-                prefix = "<< ";
                 config = {"background-color":"lightgreen"};
             }
             if (pos==0 || control.getText().substring(pos-2) == "\n\n"){
@@ -51,79 +55,62 @@
             control.scrollSelectionIntoView();
         }
 
-        function process_line(line) {
-            var ctx = null;
-            var response_text = null;
-            var processed = JSON.parse(line);
-            if ("thinking" in processed) {
-                add_quill_text(conversationQuill, processed["thinking"])
+        const code_status_element = document.getElementById('code-status');
+        var lastVal = null;
+        function bg_scroll_code_status(){
+            if (lastVal != code_status_element.value) {
+                code_status_element.scrollTop = code_status_element.scrollHeight;
+                lastVal = code_status_element.value;
             }
-            if (!processed["done"]){
-                response_text = processed["response"];
-            }
-            if ("context" in processed) {
-                ctx = processed["context"];
-            }
-            return {response_text: response_text, ctx:ctx};
+            setTimeout(bg_scroll_code_status, 100);
         }
+        bg_scroll_code_status();
 
-        export async function call(prompt, ctx=null) {
-            var context = null;
-            if (ctx == null) {
-                prompt = api_context+"\n"+prompt
+        function add_status_text(text) {
+            add_quill_text(conversationQuill, text)
+        }
+        
+        export async function call(prompt, ctx) {
+            if (ctx.length==0) {
+                prompt = api_context()+"\n"+prompt
             }
-            var request = {
-                method: "POST",
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    "model":"gpt-oss:20b",
-                    "prompt": prompt,
-                    "stream":true,
-                    "context":ctx
-                })
-            };
-            var res = await fetch("http://127.0.0.1:11434/api/generate", request
+            var useOllama = $('#ollama').is(":checked");
+            var request = null;
+            var processor = null;
+            if (useOllama) {
+                processor = ollama;
+            }
+            else {
+                processor = claude;
+            }
+            request = processor.create_request(prompt, ctx);
+            var res = await fetch(request.url, request.obj
             ).then(async response=>{
                 var response_text = "";
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-                let lastFragment = '';
 
                 try {
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
 
-                        lastFragment += decoder.decode(value, { stream: true });
+                        var partial = decoder.decode(value, { stream: true });
+                        const lines = partial.split('\n');
 
-                        const lines = lastFragment.split('\n');
-                        lastFragment = lines.pop(); // Keep the last, potentially incomplete, line
-
-                        for (const line of lines) {
-                            var processed = JSON.parse(line);
-                            if ("thinking" in processed) {
-                                add_quill_text(conversationQuill, processed["thinking"])
-                            }
-                            if (!processed["done"]){
-                                response_text += processed["response"];
-                            }
-                            if ("context" in processed) {
-                                ctx = processed["context"];
-                            }
+                        var processed = processor.process_response(lines, add_status_text, ctx);
+                        if (!processed["done"]){
+                            response_text += processed["response_text"];
                         }
-                    }
-                    // Process the last fragment if it's not empty after the stream ends
-                    if (lastFragment !== '') {
-                        console.log(`Processing final fragment: ${lastFragment}`);
+
                     }
                 } catch (error) {
                     console.error('Error reading stream:', error);
                 } finally {
                     reader.releaseLock();
                 }
-                return {response:response_text, context:ctx};
+                if (typeof(response_text) == 'undefined') debugger;
+                return response_text;
             })
             return res;
         }
@@ -141,7 +128,18 @@
             $("#cycles").text(parseInt($("#cycles").text())+1);
         }
 
+        function hasCustomToString(obj) {
+          if (obj === null || typeof obj === 'undefined') {
+            return false; // Cannot call methods on null or undefined
+          }
+          // Check if the object's toString method is different from the default
+          return obj.toString !== Object.prototype.toString;
+        }
+
         function format_js_eval_output(output) {
+            if (hasCustomToString(output)) {
+                return output.toString();
+            }
             if (typeof(output) == "string"){
                 return output;
             }
@@ -151,41 +149,55 @@
             if (typeof(output) == "object"){
                 return "Result was JSON.stringify'd: "+JSON.stringify(output);
             }
-            if (typeof(output) == "object"){
-            }
+            return output;
         }
 
+        var ctx = [];
         async function run_prompt() {
-            $("body").css("background-color", "lightyellow");            
-            var prompt = $("#prompt").val();
-            conversationQuill.setContents([]);
-            $("#code").val("");
-            $("#code-result").val("");
-            $("#code-status").val("");
-            $("#cycles").text('0');
-            add_quill_text(conversationQuill, "Initial prompt:\n"+prompt+"\n\n", "outgoing");
-            var ctx = null;
+            $("body").css("background-color", "#98FF98"); //bright green            
+            if (ctx.length == 0) {
+                var prompt = $("#prompt").val();
+                conversationQuill.setContents([]);
+                $("#code").val("");
+                $("#code-result").val("");
+                $("#code-status").val("");
+                $("#cycles").text('0');
+                add_quill_text(conversationQuill, "Initial prompt:\n"+prompt+"\n\n", "outgoing");
+            }
+            else {
+                var followup = $("#follow-up").val();
+                if (followup != "") {
+                    prompt = followup;
+                    add_quill_text(conversationQuill, "Follow up prompt:\n"+prompt+"\n\n", "outgoing");
+                }
+                $("#dyn-ui").empty();
+            }
             while (true) {
-                var res = await call(prompt, ctx);
-                var resp = res['response'];
-                ctx = res['context'];
+                var resp = await call(prompt, ctx);
+                inc_cycles();
                 if (resp.includes("DONE_EXECUTING")){
-                    $("body").css("background-color", "Nyanza");            
-                    // add_text("conversation", "\n#Prompt Complete.");
-                    add_quill_text(conversationQuill, "\n#Prompt Complete.", "outgoing");
+                    $("body").css("background-color", "#F0EAD6"); //Color=Eggshell            
+                    add_quill_text(conversationQuill, "\n#Prompt Complete.\n\n", "outgoing");
                     return resp;
                 }
                 if (resp.includes("js_execute")) {
                     try {
                         var exec_json = extractJsonWithKey(resp,"js_execute");
+                    }
+                    catch(Error){
+                        prompt = "Failed to extract an json object or value from key \"js_execute\"  from:\n"+resp+"\n The error was:\n"+Error+"\n while executing the following code:\n"+js_exec;
+                        continue;
+                    }
+                    try {
                         var js_exec = exec_json["js_execute"];
+                        js_exec += `//# sourceURL=js_execute-${$("#cycles").text()}.js`
                         $("#code").val(js_exec);
-                        var eval_result = format_js_eval_output(eval(js_exec));
-                        $("#code-result").val(eval_result);
-                        inc_cycles(); 
-                        while (isPromise(eval_result)) {
-                            eval_result = await eval_result;
+                        var result = eval(js_exec);
+                        while (isPromise(result)) {
+                            result = await result;
                         }
+                        var eval_result = format_js_eval_output(result);
+                        $("#code-result").val(eval_result);
                         prompt = "The executed js was:\n"+js_exec+"\nThe result of the executed js was: "+eval_result+
                                  "\nIf this is the expected output, reply with DONE_EXECUTING.  Otherwise, generate some different "+
                                  "js code and try again in the previously presented format.";
@@ -193,8 +205,12 @@
                         add_quill_text(conversationQuill, "\n>> Prompting with response:\n"+prompt+"\n\n", "outgoing");
                     }
                     catch(Error) {
-                        prompt = "An Error occured:\n"+ Error+"\n while executing the following code:\n"+prompt;
+                        prompt = "An Error occured:\n"+ Error+"\n while executing the following code:\n"+js_exec;
                     }
+                }
+                else {
+                    prompt = "The response did not include a json object with a \"js_execute\" key.  Respond with updated code "+
+                             "in the prescribed format."
                 }
             }
         }
@@ -227,11 +243,19 @@
 
 </head>
 <body onload="load()">
-    <button onclick="run_prompt()" style="align-self: flex-start; margin: 5px;">Query</button>
+    <div id="prompt-div">
+        <button onclick="run_prompt()" style="align-self: flex-start; margin: 5px;">Run Query</button>
+        <input type="radio" id="ollama" name="choice" value="option1" checked>
+        <label for="option1">Ollama + gpt-oss:20b</label>
+        <input type="radio" id="claude" name="choice" value="option1">
+        <label for="option2">Claude + claude-sonnet-4-5</label>
+    </div>
     <div class="main-content-flex-container">
         <div id="prompt-container" class="prompt-panel">
             Prompt<br>
             <textarea id="prompt" style="width:100%;">show a js alert that says "hello world"</textarea>
+            Follow Up<br>
+            <textarea id="follow-up" style="width:100%;"></textarea>
         </div>
         <div id="code-container" class="code-panel">
             Code<br>
@@ -244,6 +268,8 @@
         <div id="conversation-container" class="conversation-panel">
             <span style="white-space: nowrap;">Conversation &nbsp;&nbsp;&nbsp; Cycles:<span id="cycles">0</span></span>
             <div id="conversation-quill" style="width:100%;" class="prompt-panel" ></div>
+            Dynamic UI<br>
+            <div id="dyn-ui"></div>
         </div>
 
     </div>

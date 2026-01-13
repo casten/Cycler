@@ -31,7 +31,7 @@ body {
 }
 .conversation-panel {
     width: 50%;
-    height: 100%;
+    height: 50%;
 }
 .prompt-panel {
     width: 25%;
@@ -51,10 +51,16 @@ body {
     height: 20%;
 }
 #prompt {
-    height: 100%;
+    height: 75%;
     flex-grow: 1; /* Make prompt fill its remaining space */
     box-sizing: border-box;
     width: 50%;
+}
+#follow-up {
+    height: 25%;
+    flex-grow: 1; /* Make prompt fill its remaining space */
+    box-sizing: border-box;
+    width: 50%
 }
 #conversation-quill {
  border: 1px solid black;
@@ -72,5 +78,16 @@ body {
     padding: 5;
     box-sizing: border-box;
     overflow-y: auto;
-    max-height: 100dvh; 
+    max-height: 50dvh; 
+}
+
+#dyn-ui {
+    resize: both;
+    overflow: auto; 
+    border: 1px solid black;
+    padding: 5;
+    height: 35dvh; 
+    box-sizing: border-box;
+    flex-grow: 1;
+    flex-shrink: 1;
 }
